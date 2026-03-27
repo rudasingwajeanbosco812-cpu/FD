@@ -36,37 +36,54 @@ if(!$user || $user['role'] != 'admin'){
 // --- 3. FORM PROCESSING ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     
-    // --- KONGERA USER MUSHYA (CREATE USER) ---
+    // --- KONGERA USER ---
     if(isset($_POST['add_user'])){
         $name = $_POST['user_name'];
         $email = $_POST['user_email'];
-        // Kubika password mu buryo bw'ibanga (Security)
         $pass = password_hash($_POST['user_password'], PASSWORD_DEFAULT);
         $role = $_POST['user_role'];
-
         $stmt = $conn->prepare("INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)");
         $stmt->execute([$name, $email, $pass, $role]);
     }
 
-    // Gukura umu-user muri system (Delete)
+    // --- KONGERA FOOD (Ikiryo) IFITE IFOTO ---
+    if(isset($_POST['add_food'])){
+        $food_name = $_POST['name'];
+        $price = $_POST['price'];
+        
+        // Gutunganya ifoto
+        $image_name = $_FILES['food_image']['name'];
+        $tmp_name = $_FILES['food_image']['tmp_name'];
+        $folder = "uploads/";
+
+        // Reba niba folder ihari, niba idahari uyikore
+        if (!is_dir($folder)) {
+            mkdir($folder, 0777, true);
+        }
+
+        if (!empty($image_name)) {
+            // Guhindura izina ry'ifoto kugira ngo amafoto adahura (urugero: 17112345_pizza.jpg)
+            $new_image_name = time() . "_" . basename($image_name);
+            $target_file = $folder . $new_image_name;
+
+            if (move_uploaded_file($tmp_name, $target_file)) {
+                // Bibika mu database n'izina ry'ifoto rishya
+                $stmt = $conn->prepare("INSERT INTO foods (name, price, image) VALUES (?, ?, ?)");
+                $stmt->execute([$food_name, $price, $new_image_name]);
+            }
+        } else {
+            // Niba nta foto ashyizemo, koresha default cyangwa ureke harimo ubusa
+            $stmt = $conn->prepare("INSERT INTO foods (name, price) VALUES (?, ?)");
+            $stmt->execute([$food_name, $price]);
+        }
+    }
+
+    // --- DELETE USER ---
     if(isset($_POST['delete_user'])){
         $conn->prepare("DELETE FROM users WHERE id=?")->execute([$_POST['user_id']]);
     }
 
-    // Guhindura Role (Update)
-    if(isset($_POST['update_user'])){
-        $conn->prepare("UPDATE users SET role=? WHERE id=?")->execute([$_POST['role'], $_POST['user_id']]);
-    }
-
-    // Ibindi (Food & Orders)
-    if(isset($_POST['add_food'])){
-        $conn->prepare("INSERT INTO foods (name, price) VALUES (?, ?)")->execute([$_POST['name'], $_POST['price']]);
-    }
-    if(isset($_POST['update_status'])){
-        $conn->prepare("UPDATE orders SET status=? WHERE id=?")->execute([$_POST['status'], $_POST['order_id']]);
-    }
-
-    header("Location: admin.php");
+    header("Location: admin.php"); // Reba niba file yawe yitwa admin.php
     exit();
 }
 
@@ -100,8 +117,7 @@ $totalOrders = $conn->query("SELECT COUNT(*) FROM orders")->fetchColumn();
     <nav class="nav flex-column">
         <a class="nav-link active" href="#">📊 Dashboard</a>
         <a class="nav-link" href="#users">👥 Manage Users</a>
-        <a class="nav-link" href="#menu">🍔 Menu Items</a>
-        <a class="nav-link" href="#orders">🛒 Orders</a>
+        <a class="nav-link" href="#add_food_section">🍔 Add Menu</a>
         <div class="mt-5"><a href="logout.php" class="btn btn-danger btn-sm w-100">Logout</a></div>
     </nav>
 </div>
@@ -115,10 +131,31 @@ $totalOrders = $conn->query("SELECT COUNT(*) FROM orders")->fetchColumn();
         <div class="col-md-4"><div class="section-card text-center text-warning"><h6>Orders</h6><h3><?= $totalOrders ?></h3></div></div>
     </div>
 
-    <div class="section-card" id="users">
+    <div class="section-card" id="add_food_section">
+        <h5 class="fw-bold text-success mb-3">🍔 Add New Food Menu</h5>
+        <form method="POST" enctype="multipart/form-data" class="row g-3">
+            <div class="col-md-4">
+                <label class="small fw-bold">Food Name</label>
+                <input type="text" name="name" class="form-control" placeholder="e.g. Pizza Royale" required>
+            </div>
+            <div class="col-md-2">
+                <label class="small fw-bold">Price (RWF)</label>
+                <input type="number" name="price" class="form-control" placeholder="5000" required>
+            </div>
+            <div class="col-md-4">
+                <label class="small fw-bold">Food Image (Select File)</label>
+                <input type="file" name="food_image" class="form-control" accept="image/*">
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="submit" name="add_food" class="btn btn-success w-100 fw-bold">Add Item</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="section-card" id="users" style="margin-top: 40px;">
         <div class="row">
             <div class="col-md-4 border-end">
-                <h5 class="fw-bold text-primary mb-3"><i class="fas fa-user-plus"></i> Add New User</h5>
+                <h5 class="fw-bold text-primary mb-3">Add New User</h5>
                 <form method="POST" class="p-3 bg-light rounded">
                     <div class="mb-2">
                         <label class="small fw-bold">Full Name</label>
@@ -150,20 +187,14 @@ $totalOrders = $conn->query("SELECT COUNT(*) FROM orders")->fetchColumn();
                     <tbody>
                         <?php $users = $conn->query("SELECT * FROM users"); while($u = $users->fetch()): ?>
                         <tr>
-                            <form method="POST">
-                                <td><strong><?= $u['name'] ?></strong><br><small><?= $u['email'] ?></small></td>
-                                <td>
-                                    <select name="role" class="form-select form-select-sm" style="width: 100px;">
-                                        <option value="admin" <?= $u['role']=='admin'?'selected':'' ?>>Admin</option>
-                                        <option value="manager" <?= $u['role']=='manager'?'selected':'' ?>>Manager</option>
-                                    </select>
-                                </td>
-                                <td class="text-end">
+                            <td><strong><?= $u['name'] ?></strong><br><small><?= $u['email'] ?></small></td>
+                            <td><span class="badge bg-secondary"><?= $u['role'] ?></span></td>
+                            <td class="text-end">
+                                <form method="POST" style="display:inline;">
                                     <input type="hidden" name="user_id" value="<?= $u['id'] ?>">
-                                    <button name="update_user" class="btn btn-outline-primary btn-sm border-0">Save</button>
-                                    <button name="delete_user" class="btn btn-link text-danger btn-sm" onclick="return confirm('Delete?')">×</button>
-                                </td>
-                            </form>
+                                    <button name="delete_user" class="btn btn-link text-danger btn-sm" onclick="return confirm('Delete this user?')">Delete</button>
+                                </form>
+                            </td>
                         </tr>
                         <?php endwhile; ?>
                     </tbody>
@@ -171,8 +202,7 @@ $totalOrders = $conn->query("SELECT COUNT(*) FROM orders")->fetchColumn();
             </div>
         </div>
     </div>
-
-    </div>
+</div>
 
 </body>
 </html>
